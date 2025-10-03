@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pixelated Snake Game</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #000;
+            color: #fff;
+            font-family: 'Courier New', monospace;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        .game-container {
+            text-align: center;
+        }
+
+        .game-info {
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            width: 400px;
+            font-size: 16px;
+        }
+
+        canvas {
+            border: 2px solid #fff;
+            background-color: #000;
+        }
+
+        .controls {
+            margin-top: 20px;
+            font-size: 14px;
+        }
+
+        .game-over {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(0, 0, 0, 0.8);
+            padding: 20px;
+            border: 2px solid #fff;
+            text-align: center;
+            display: none;
+        }
+
+        .restart-btn {
+            background-color: #fff;
+            color: #000;
+            border: none;
+            padding: 10px 20px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+
+        .restart-btn:hover {
+            background-color: #ccc;
+        }
+
+        .audio-controls {
+            margin-top: 10px;
+            font-size: 12px;
+        }
+
+        .audio-toggle {
+            background-color: transparent;
+            color: #fff;
+            border: 1px solid #fff;
+            padding: 5px 10px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            cursor: pointer;
+            margin: 0 5px;
+        }
+
+        .audio-toggle:hover {
+            background-color: #fff;
+            color: #000;
+        }
+
+        .audio-toggle.active {
+            background-color: #fff;
+            color: #000;
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <div class="game-info">
+            <div>Score: <span id="score">0</span></div>
+            <div>Level: <span id="level">1</span></div>
+            <div>Speed: <span id="speed">1</span></div>
+        </div>
+        <canvas id="gameCanvas" width="400" height="400"></canvas>
+        <div class="controls">
+            Use ARROW KEYS or WASD to control the snake
+        </div>
+        <div class="audio-controls">
+            <button class="audio-toggle active" id="musicToggle" onclick="toggleMusic()">🎵 Music</button>
+            <button class="audio-toggle active" id="sfxToggle" onclick="toggleSFX()">🔊 SFX</button>
+        </div>
+    </div>
+
+    <div class="game-over" id="gameOver">
+        <h2>Game Over!</h2>
+        <p>Final Score: <span id="finalScore">0</span></p>
+        <p>Level Reached: <span id="finalLevel">1</span></p>
+        <button class="restart-btn" onclick="restartGame()">Play Again</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreElement = document.getElementById('score');
+        const levelElement = document.getElementById('level');
+        const speedElement = document.getElementById('speed');
+        const gameOverElement = document.getElementById('gameOver');
+        const finalScoreElement = document.getElementById('finalScore');
+        const finalLevelElement = document.getElementById('finalLevel');
+
+        // Game settings
+        const gridSize = 20;
+        const tileCount = canvas.width / gridSize;
+
+        let snake = [
+            {x: 10, y: 10}
+        ];
+        let food = {};
+        let dx = 0;
+        let dy = 0;
+        let score = 0;
+        let level = 1;
+        let gameSpeed = 150; // milliseconds between moves
+        let gameRunning = true;
+        let walls = [];
+        
+        // Audio system
+        let audioContext;
+        let musicEnabled = true;
+        let sfxEnabled = true;
+        let backgroundMusic = null;
+        let musicGain;
+        
+        // Wall patterns
+        const wallPatterns = [
+            'border',      // Level 1: Just borders
+            'corners',     // Level 2: Corner obstacles
+            'cross',       // Level 3: Cross in center
+            'maze',        // Level 4: Simple maze
+            'spiral',      // Level 5: Spiral pattern
+            'rooms',       // Level 6: Room divisions
+            'diagonal',    // Level 7: Diagonal walls
+            'complex'      // Level 8+: Complex patterns
+        ];
+
+        // Initialize audio system
+        function initAudio() {
+            try {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                
+                // Create gain node for music volume control
+                musicGain = audioContext.createGain();
+                musicGain.connect(audioContext.destination);
+                musicGain.gain.value = 0.3;
+                
+                // Start background music
+                if (musicEnabled) {
+                    startBackgroundMusic();
+                }
+            } catch (e) {
+                console.log('Audio not supported');
+            }
+        }
+
+        // Initialize game
+        function init() {
+            // Reset game state
+            snake = [{x: 10, y: 10}];
+            dx = 0;
+            dy = 0;
+            score = 0;
+            level = 1;
+            gameSpeed = 150;
+            gameRunning = true;
+            walls = [];
+            
+            // Initialize audio
+            initAudio();
+            
+            // Generate walls based on level
+            generateWalls();
+            
+            // Generate food
+            generateFood();
+            
+            // Update UI
+            updateUI();
+            
+            // Start game loop
+            gameLoop();
+        }
+
+        function generateWalls() {
+            walls = [];
+            
+            // Always add border walls
+            for (let x = 0; x < tileCount; x++) {
+                walls.push({x: x, y: 0});
+                walls.push({x: x, y: tileCount - 1});
+            }
+            for (let y = 0; y < tileCount; y++) {
+                walls.push({x: 0, y: y});
+                walls.push({x: tileCount - 1, y: y});
+            }
+
+            const patternIndex = Math.min(level - 1, wallPatterns.length - 1);
+            const pattern = wallPatterns[patternIndex];
+            
+            switch (pattern) {
+                case 'border':
+                    // Just border walls (level 1)
+                    break;
+                    
+                case 'corners':
+                    // Corner L-shapes (level 2)
+                    walls.push({x: 3, y: 3}, {x: 4, y: 3}, {x: 3, y: 4});
+                    walls.push({x: tileCount - 4, y: 3}, {x: tileCount - 5, y: 3}, {x: tileCount - 4, y: 4});
+                    walls.push({x: 3, y: tileCount - 4}, {x: 4, y: tileCount - 4}, {x: 3, y: tileCount - 5});
+                    walls.push({x: tileCount - 4, y: tileCount - 4}, {x: tileCount - 5, y: tileCount - 4}, {x: tileCount - 4, y: tileCount - 5});
+                    break;
+                    
+                case 'cross':
+                    // Cross pattern (level 3)
+                    const center = Math.floor(tileCount / 2);
+                    for (let i = -3; i <= 3; i++) {
+                        if (center + i > 0 && center + i < tileCount - 1) {
+                            walls.push({x: center + i, y: center});
+                            walls.push({x: center, y: center + i});
+                        }
+                    }
+                    break;
+                    
+                case 'maze':
+                    // Simple maze (level 4)
+                    for (let x = 6; x < tileCount - 6; x += 4) {
+                        for (let y = 3; y < tileCount - 3; y++) {
+                            walls.push({x: x, y: y});
+                        }
+                    }
+                    for (let y = 6; y < tileCount - 6; y += 4) {
+                        for (let x = 3; x < tileCount - 3; x++) {
+                            walls.push({x: x, y: y});
+                        }
+                    }
+                    break;
+                    
+                case 'spiral':
+                    // Spiral pattern (level 5)
+                    let spiralX = 3, spiralY = 3;
+                    let direction = 0; // 0: right, 1: down, 2: left, 3: up
+                    const spiralSteps = [12, 10, 8, 6, 4, 2];
+                    
+                    for (let step of spiralSteps) {
+                        for (let i = 0; i < step; i++) {
+                            if (spiralX > 0 && spiralX < tileCount - 1 && spiralY > 0 && spiralY < tileCount - 1) {
+                                walls.push({x: spiralX, y: spiralY});
+                            }
+                            switch (direction) {
+                                case 0: spiralX++; break;
+                                case 1: spiralY++; break;
+                                case 2: spiralX--; break;
+                                case 3: spiralY--; break;
+                            }
+                        }
+                        direction = (direction + 1) % 4;
+                    }
+                    break;
+                    
+                case 'rooms':
+                    // Room divisions (level 6)
+                    const midX = Math.floor(tileCount / 2);
+                    const midY = Math.floor(tileCount / 2);
+                    
+                    // Vertical divider
+                    for (let y = 3; y < tileCount - 3; y++) {
+                        if (y !== midY && y !== midY + 1) {
+                            walls.push({x: midX, y: y});
+                        }
+                    }
+                    
+                    // Horizontal divider
+                    for (let x = 3; x < tileCount - 3; x++) {
+                        if (x !== midX && x !== midX + 1) {
+                            walls.push({x: x, y: midY});
+                        }
+                    }
+                    break;
+                    
+                case 'diagonal':
+                    // Diagonal walls (level 7)
+                    for (let i = 4; i < tileCount - 4; i++) {
+                        walls.push({x: i, y: i});
+                        walls.push({x: i, y: tileCount - 1 - i});
+                    }
+                    break;
+                    
+                case 'complex':
+                default:
+                    // Complex random pattern (level 8+)
+                    const complexity = Math.min(level - 7, 5);
+                    
+                    // Add some structured walls
+                    for (let i = 0; i < complexity * 3; i++) {
+                        const x = Math.floor(Math.random() * (tileCount - 6)) + 3;
+                        const y = Math.floor(Math.random() * (tileCount - 6)) + 3;
+                        
+                        // Create small wall clusters
+                        const clusterSize = Math.floor(Math.random() * 3) + 2;
+                        for (let j = 0; j < clusterSize; j++) {
+                            const offsetX = Math.floor(Math.random() * 3) - 1;
+                            const offsetY = Math.floor(Math.random() * 3) - 1;
+                            const wallX = x + offsetX;
+                            const wallY = y + offsetY;
+                            
+                            if (wallX > 1 && wallX < tileCount - 2 && wallY > 1 && wallY < tileCount - 2) {
+                                walls.push({x: wallX, y: wallY});
+                            }
+                        }
+                    }
+                    break;
+            }
+        }
+
+        function generateFood() {
+            let validPosition = false;
+            
+            while (!validPosition) {
+                food = {
+                    x: Math.floor(Math.random() * (tileCount - 2)) + 1,
+                    y: Math.floor(Math.random() * (tileCount - 2)) + 1
+                };
+                
+                // Check if food position conflicts with snake or walls
+                validPosition = !snake.some(segment => segment.x === food.x && segment.y === food.y) &&
+                               !walls.some(wall => wall.x === food.x && wall.y === food.y);
+            }
+        }
+
+        function drawGame() {
+            // Clear canvas
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Draw walls
+            ctx.fillStyle = '#fff';
+            walls.forEach(wall => {
+                ctx.fillRect(wall.x * gridSize, wall.y * gridSize, gridSize - 2, gridSize - 2);
+            });
+
+            // Draw snake
+            ctx.fillStyle = '#0f0';
+            snake.forEach((segment, index) => {
+                if (index === 0) {
+                    // Snake head - brighter green
+                    ctx.fillStyle = '#0f0';
+                } else {
+                    // Snake body - darker green
+                    ctx.fillStyle = '#090';
+                }
+                ctx.fillRect(segment.x * gridSize, segment.y * gridSize, gridSize - 2, gridSize - 2);
+            });
+
+            // Draw food
+            ctx.fillStyle = '#f00';
+            ctx.fillRect(food.x * gridSize, food.y * gridSize, gridSize - 2, gridSize - 2);
+        }
+
+        function moveSnake() {
+            const head = {x: snake[0].x + dx, y: snake[0].y + dy};
+
+            // Check wall collision
+            if (walls.some(wall => wall.x === head.x && wall.y === head.y)) {
+                gameOver();
+                return;
+            }
+
+            // Check self collision
+            if (snake.some(segment => segment.x === head.x && segment.y === head.y)) {
+                gameOver();
+                return;
+            }
+
+            snake.unshift(head);
+
+            // Check food collision
+            if (head.x === food.x && head.y === food.y) {
+                score += 10;
+                playSound('eat');
+                
+                // Check for level up (every 100 points)
+                const newLevel = Math.floor(score / 100) + 1;
+                if (newLevel > level) {
+                    level = newLevel;
+                    gameSpeed = Math.max(50, gameSpeed - 15); // Increase speed, minimum 50ms
+                    generateWalls(); // Regenerate walls for new level
+                    playSound('levelup');
+                }
+                
+                generateFood();
+                updateUI();
+            } else {
+                snake.pop();
+            }
+        }
+
+        function gameOver() {
+            gameRunning = false;
+            playSound('gameover');
+            stopBackgroundMusic();
+            finalScoreElement.textContent = score;
+            finalLevelElement.textContent = level;
+            gameOverElement.style.display = 'block';
+        }
+
+        function restartGame() {
+            gameOverElement.style.display = 'none';
+            init();
+        }
+
+        // Audio functions
+        function createOscillator(frequency, type = 'square', duration = 0.1) {
+            if (!audioContext || !sfxEnabled) return;
+            
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            oscillator.frequency.value = frequency;
+            oscillator.type = type;
+            
+            gainNode.gain.value = 0.1;
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration);
+            
+            oscillator.start();
+            oscillator.stop(audioContext.currentTime + duration);
+        }
+
+        function playSound(soundType) {
+            if (!audioContext || !sfxEnabled) return;
+            
+            switch (soundType) {
+                case 'eat':
+                    // Happy eating sound
+                    createOscillator(800, 'square', 0.1);
+                    setTimeout(() => createOscillator(1000, 'square', 0.1), 50);
+                    break;
+                    
+                case 'gameover':
+                    // Descending game over sound
+                    createOscillator(400, 'sawtooth', 0.2);
+                    setTimeout(() => createOscillator(300, 'sawtooth', 0.2), 100);
+                    setTimeout(() => createOscillator(200, 'sawtooth', 0.4), 200);
+                    break;
+                    
+                case 'levelup':
+                    // Ascending level up sound
+                    createOscillator(400, 'square', 0.15);
+                    setTimeout(() => createOscillator(500, 'square', 0.15), 80);
+                    setTimeout(() => createOscillator(600, 'square', 0.15), 160);
+                    setTimeout(() => createOscillator(800, 'square', 0.3), 240);
+                    break;
+                    
+                case 'move':
+                    // Subtle move sound
+                    createOscillator(200, 'triangle', 0.05);
+                    break;
+            }
+        }
+
+        function startBackgroundMusic() {
+            if (!audioContext || !musicEnabled || backgroundMusic) return;
+            
+            // Create a simple 8-bit melody
+            const notes = [
+                { freq: 262, duration: 0.25 }, // C4
+                { freq: 294, duration: 0.25 }, // D4
+                { freq: 330, duration: 0.25 }, // E4
+                { freq: 349, duration: 0.25 }, // F4
+                { freq: 392, duration: 0.25 }, // G4
+                { freq: 330, duration: 0.25 }, // E4
+                { freq: 294, duration: 0.25 }, // D4
+                { freq: 262, duration: 0.5 },  // C4
+            ];
+            
+            let noteIndex = 0;
+            let nextNoteTime = audioContext.currentTime;
+            
+            function playNextNote() {
+                if (!musicEnabled || !gameRunning) return;
+                
+                const note = notes[noteIndex];
+                const oscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(musicGain);
+                
+                oscillator.frequency.value = note.freq;
+                oscillator.type = 'square';
+                
+                gainNode.gain.value = 0;
+                gainNode.gain.setValueAtTime(0, nextNoteTime);
+                gainNode.gain.linearRampToValueAtTime(0.05, nextNoteTime + 0.01);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, nextNoteTime + note.duration);
+                
+                oscillator.start(nextNoteTime);
+                oscillator.stop(nextNoteTime + note.duration);
+                
+                nextNoteTime += note.duration;
+                noteIndex = (noteIndex + 1) % notes.length;
+                
+                // Schedule next note
+                setTimeout(() => {
+                    if (musicEnabled && gameRunning) {
+                        playNextNote();
+                    }
+                }, note.duration * 1000);
+            }
+            
+            backgroundMusic = true;
+            playNextNote();
+        }
+
+        function stopBackgroundMusic() {
+            backgroundMusic = false;
+        }
+
+        function toggleMusic() {
+            musicEnabled = !musicEnabled;
+            const musicToggle = document.getElementById('musicToggle');
+            
+            if (musicEnabled) {
+                musicToggle.classList.add('active');
+                if (gameRunning && !backgroundMusic) {
+                    startBackgroundMusic();
+                }
+            } else {
+                musicToggle.classList.remove('active');
+                stopBackgroundMusic();
+            }
+        }
+
+        function toggleSFX() {
+            sfxEnabled = !sfxEnabled;
+            const sfxToggle = document.getElementById('sfxToggle');
+            
+            if (sfxEnabled) {
+                sfxToggle.classList.add('active');
+            } else {
+                sfxToggle.classList.remove('active');
+            }
+        }
+
+        function updateUI() {
+            scoreElement.textContent = score;
+            levelElement.textContent = level;
+            speedElement.textContent = Math.round((200 - gameSpeed) / 30);
+        }
+
+        function gameLoop() {
+            if (!gameRunning) return;
+
+            if (dx !== 0 || dy !== 0) {
+                moveSnake();
+            }
+            
+            drawGame();
+            
+            setTimeout(gameLoop, gameSpeed);
+        }
+
+        // Keyboard controls
+        document.addEventListener('keydown', (e) => {
+            if (!gameRunning) return;
+
+            const key = e.key.toLowerCase();
+            let moved = false;
+            
+            // Prevent reverse direction
+            switch (key) {
+                case 'arrowup':
+                case 'w':
+                    if (dy !== 1) {
+                        dx = 0;
+                        dy = -1;
+                        moved = true;
+                    }
+                    break;
+                case 'arrowdown':
+                case 's':
+                    if (dy !== -1) {
+                        dx = 0;
+                        dy = 1;
+                        moved = true;
+                    }
+                    break;
+                case 'arrowleft':
+                case 'a':
+                    if (dx !== 1) {
+                        dx = -1;
+                        dy = 0;
+                        moved = true;
+                    }
+                    break;
+                case 'arrowright':
+                case 'd':
+                    if (dx !== -1) {
+                        dx = 1;
+                        dy = 0;
+                        moved = true;
+                    }
+                    break;
+            }
+            
+            if (moved) {
+                playSound('move');
+            }
+            
+            e.preventDefault();
+        });
+
+        // Handle audio context initialization on first user interaction
+        document.addEventListener('click', () => {
+            if (audioContext && audioContext.state === 'suspended') {
+                audioContext.resume();
+            }
+        });
+
+        // Start the game
+        init();
+    </script>
+</body>
+</html>
