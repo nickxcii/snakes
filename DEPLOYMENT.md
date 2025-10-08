@@ -15,12 +15,14 @@
    - Go to [render.com](https://render.com) and sign up/log in
    - Click "New +" → "Web Service"
    - Connect your GitHub repository
-   - Configure:
+   - **IMPORTANT**: Configure these exact settings:
      - **Name**: `snake-game` (or preferred name)
      - **Environment**: `Node`
-     - **Build Command**: `npm install`
-     - **Start Command**: `npm start`
+     - **Root Directory**: `.` (leave blank or use dot)
+     - **Build Command**: `npm ci`
+     - **Start Command**: `node server.js`
      - **Plan**: Free tier is sufficient
+     - **Auto-Deploy**: Yes
 
 3. **Your game will be live at**: `https://[service-name].onrender.com`
 
@@ -60,9 +62,16 @@ You can set these in Render's dashboard:
 
 ### Common Issues:
 
-1. **Build fails**: Check that `package.json` is correct
-2. **App won't start**: Verify `server.js` file exists
-3. **404 errors**: All routes redirect to main game
+1. **"Cannot find module '/opt/render/project/src/start'" error**:
+   - This happens when Render uses wrong start command
+   - **Solution**: In Render dashboard, go to Settings → Build & Deploy
+   - Set **Start Command** to: `node server.js`
+   - Redeploy the service
+
+2. **Build fails**: Check that `package.json` is correct
+3. **App won't start**: Verify `server.js` file exists  
+4. **404 errors**: All routes redirect to main game
+5. **Wrong directory**: Make sure Root Directory is set to `.` (or blank)
 
 ### Local Testing:
 

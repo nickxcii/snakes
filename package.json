@@ -5,7 +5,9 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js"
+    "build": "npm install",
+    "dev": "node server.js",
+    "test": "echo \"No tests specified\" && exit 0"
   },
   "keywords": [
     "game",
@@ -22,6 +24,7 @@
     "compression": "^1.7.4"
   },
   "engines": {
-    "node": ">=14.0.0"
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
   }
 }
